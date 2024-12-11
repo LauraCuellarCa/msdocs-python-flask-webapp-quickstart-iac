@@ -6,10 +6,8 @@ resource servicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
   location: location
   properties: {
     sku: {
-      capacity: 1
-      family: 'B'
       name: 'B1'
-      size: 'B1'
+      capacity: 1
       tier: 'Basic'
     }
     kind: 'Linux'
