@@ -1,26 +1,66 @@
 name: Azure Bicep Deployment
 
 on:
+  workflow_dispatch:  # Allows you to manually trigger the workflow from the GitHub Actions tab.
+  pull_request:
+    branches:
+      - main  # Trigger deployment on pull requests to main.
   push:
     branches:
-      - main  # Trigger the deployment when changes are pushed to the `main` branch
+      - '*'  # Trigger on push to any branch (you can change this if needed)
+    paths-ignore:
+      - 'scripts/**'  # Ignore changes to specific folders (optional)
+
+env:
+  RESOURCE_GROUP_DEV: BCSAI2024-DEVOPS-STUDENTS-A-DEV # Resource group where deployment happens
+  SUBSCRIPTION_ID: e0b9cada-61bc-4b5a-bd7a-52c606726b3b  # Your Azure subscription ID
+  USER_ALIAS: lc
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest  # Runs the job on an Ubuntu runner
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2  # This step checks out the code in the repository
+      - name: Checkout code
+        uses: actions/checkout@v2  # This checks out your repository to the runner
 
-    - name: Login to Azure
-      uses: azure/login@v1  # This step authenticates with Azure
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}  # Azure credentials stored in GitHub secrets
+      - name: Run Bicep linter
+        run: az bicep build --file ./main.bicep  # Lint the Bicep file for any errors
 
-    - name: Deploy Bicep Template
-      run: |
-        az deployment group create \
-          --resource-group BCSAI2024-DEVOPS-STUDENTS-A-DEV \  
-          --template-file main.bicep \
-          --parameters parameters.bicep  # Parameters file for values like resource names and locations
+      - name: Upload Bicep build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bicep-build
+          path: ./main.bicep  # Path to the Bicep file to be uploaded as an artifact
+
+  deploy-dev:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: 'Development'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download Bicep build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bicep-build  # This downloads the Bicep file artifact
+
+      - name: Log into Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}  # Using the stored service principal credentials
+
+      - name: Deploy to dev
+        uses: azure/arm-deploy@v2
+        with:
+          subscriptionId: ${{ env.SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ env.RESOURCE_GROUP_DEV }}
+          template: ./main.bicep  # Path to your Bicep file
+          parameters: ./parameters/parameters.bicep  # Path to the parameters file
+          deploymentName: ${{ env.USER_ALIAS }}-dev  # Custom deployment name
+
+
